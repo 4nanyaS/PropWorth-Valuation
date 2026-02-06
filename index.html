@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PropWorth - Luxury Valuation AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/iconify-icon@1.0.7/dist/iconify-icon.min.js"></script>
+    <script defer="" src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            cursor: default;
+        }
+
+        [x-cloak] {
+            display: none !important;
+        }
+
+        /* Premium Glassmorphism */
+        .glass-panel {
+            background: rgba(10, 10, 10, 0.6);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow:
+                0 0 0 1px rgba(0, 0, 0, 1),
+                0 20px 50px -12px rgba(0, 0, 0, 0.9),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+        }
+
+        /* Result Card Specific Style */
+        .result-card {
+            background: linear-gradient(145deg, #0f0f0f 0%, #050505 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 1);
+        }
+
+        /* Animations */
+        @keyframes breathe {
+            0%, 100% { transform: scale(1.0); }
+            50% { transform: scale(1.02); }
+        }
+
+        .bg-breathe {
+            animation: breathe 30s ease-in-out infinite alternate;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .animate-shimmer {
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes fillBar {
+            from { width: 0; }
+        }
+
+        .bar-animate {
+            animation: fillBar 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Form Controls */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* Custom Text Selection */
+        ::selection {
+            background: rgba(217, 119, 6, 0.3);
+            color: #fbbf24;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' },
+                        amber: { 500: '#f59e0b', 600: '#d97706', 700: '#b45309' }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-[#020202] text-neutral-300 antialiased overflow-x-hidden relative min-h-screen flex flex-col" 
+      x-data="{ 
+          view: 'landing',
+          mouseX: 0,
+          mouseY: 0,
+          cardTilt: { x: 0, y: 0 },
+          formData: {
+              area_sqft: '',
+              beds: '',
+              baths: '',
+              furnishing: 0 
+          },
+          loading: false,
+          result: null,
+          valuationId: '',
+          currentDisplayPrice: 0,
+          error: null,
+          
+          formatMoney(val) {
+              return new Intl.NumberFormat('en-US', { 
+                  style: 'currency', 
+                  currency: 'USD', 
+                  maximumFractionDigits: 0 
+              }).format(val);
+          },
+
+          resetForm() {
+            this.result = null;
+            this.currentDisplayPrice = 0;
+            this.error = null;
+            this.loading = false;
+          },
+
+          handleTilt(e) {
+              const el = e.currentTarget;
+              const rect = el.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const y = e.clientY - rect.top;
+              const centerX = rect.width / 2;
+              const centerY = rect.height / 2;
+              
+              // Limit tilt to small degrees for subtlety
+              this.cardTilt.x = ((y - centerY) / centerY) * -2;
+              this.cardTilt.y = ((x - centerX) / centerX) * 2;
+          },
+
+          resetTilt() {
+              this.cardTilt.x = 0;
+              this.cardTilt.y = 0;
+          },
+
+          async predict() {
+            if (!this.formData.area_sqft) return;
+
+            this.loading = true;
+            this.result = null;
+            this.error = null;
+            
+            try {
+                // Direct call to Flask Backend
+                const response = await fetch('http://127.0.0.1:5000/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        beds: parseInt(this.formData.beds) || 0,
+                        baths: parseInt(this.formData.baths) || 0,
+                        area_sqft: parseFloat(this.formData.area_sqft) || 0,
+                        furnishing: parseInt(this.formData.furnishing) || 0
+                    })
+                });
+
+                if (!response.ok) throw new Error('Failed to connect to API');
+                
+                const data = await response.json();
+                const finalPrice = data.predicted_price;
+                
+                this.valuationId = '#' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-P';
+                this.currentDisplayPrice = finalPrice;
+                this.result = true;
+
+            } catch (error) {
+                console.error('API Error:', error);
+                this.error = 'Could not connect to backend server on port 5000. Please ensure app.py is running.';
+            } finally {
+                this.loading = false;
+            }
+          }
+      }" @mousemove="mouseX = $event.clientX; mouseY = $event.clientY">
+
+    <!-- Cinematic Background -->
+    <div class="fixed inset-0 z-0 pointer-events-none bg-[#020202]">
+        <div class="absolute inset-0 z-0 bg-breathe bg-cover bg-[center_top] opacity-30 mix-blend-luminosity"
+            style="background-image: url('https://t3.ftcdn.net/jpg/07/50/54/66/360_F_750546693_djdr9LKaYjldHJWxFmnaaIOGMLR11qbi.jpg');">
+        </div>
+        <div class="absolute inset-0 z-10 bg-gradient-to-t from-[#020202] via-[#020202]/80 to-transparent"></div>
+        <div class="absolute inset-0 z-10 bg-gradient-to-b from-[#020202]/30 to-transparent"></div>
+
+        <!-- Mouse Spotlight -->
+        <div class="absolute inset-0 z-20 transition-opacity duration-300"
+            :style="`background: radial-gradient(800px circle at ${mouseX}px ${mouseY}px, rgba(217, 119, 6, 0.04), transparent 40%);`">
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-50 w-full bg-transparent">
+        <div class="flex h-24 max-w-7xl mr-auto ml-auto pr-6 pl-6 items-center justify-between">
+            <div class="flex items-center gap-3 cursor-pointer group" @click="view = 'landing'">
+                <div class="relative flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-white/10 group-hover:border-amber-500/50 transition-all duration-300">
+                    <iconify-icon icon="solar:buildings-2-linear" class="text-white text-lg"></iconify-icon>
+                </div>
+                <span class="text-lg font-semibold tracking-tight text-white">PropWorth</span>
+            </div>
+            <button @click="view = 'app'; resetForm()" class="bg-white/10 hover:bg-white/20 border border-white/5 backdrop-blur-md text-white px-6 py-2 rounded-full text-[11px] font-semibold tracking-widest uppercase transition-all">
+                Launch Demo
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col min-h-[calc(100vh-96px)] w-full z-10 pt-6 pr-6 pb-6 pl-6 relative items-center justify-center">
+
+        <!-- Landing View -->
+        <div x-show="view === 'landing'" x-transition:enter="transition ease-out duration-1000"
+            x-transition:enter-start="opacity-0 translate-y-8" x-transition:enter-end="opacity-100 translate-y-0"
+            class="text-center max-w-5xl mx-auto flex flex-col items-center pt-0 pb-12">
+
+            <!-- Badge -->
+            <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border border-amber-500/20 bg-amber-900/10 backdrop-blur-xl mb-8 shadow-[0_0_15px_-3px_rgba(245,158,11,0.1)] hover:scale-105 transition-transform duration-300 cursor-default">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                <span class="text-[10px] font-bold text-amber-500 uppercase tracking-[0.2em]">Your Reliable Property Advisor</span>
+            </div>
+
+            <!-- Headline -->
+            <h1 class="text-6xl md:text-8xl font-medium tracking-tighter text-white mb-6 leading-[0.95] drop-shadow-2xl">
+                Real Estate <br>
+                <span class="bg-clip-text text-transparent bg-gradient-to-r from-neutral-100 via-neutral-200 to-amber-600 pb-2">Intelligence.</span>
+            </h1>
+
+            <!-- Subtext (Fixed to 2 lines) -->
+            <p class="leading-relaxed text-base md:text-lg font-light text-neutral-400/80 max-w-2xl mx-auto mb-10">
+                Step into the future of property valuation. Instantly estimate property values with precision using
+                advanced algorithms powered by Dubai market insights.
+            </p>
+
+            <!-- Button -->
+            <button @click="view = 'app'; resetForm()" class="group relative px-10 py-5 bg-white text-black rounded-full font-bold text-xs tracking-widest uppercase transition-all duration-300 hover:bg-amber-600 hover:text-white hover:shadow-[0_0_30px_-5px_rgba(217,119,6,0.4)] hover:scale-105 overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent w-1/2 h-full -translate-x-full group-hover:animate-shimmer z-0"></div>
+                <span class="relative z-10 flex items-center gap-3">
+                    Start Valuation 
+                    <iconify-icon icon="solar:arrow-right-linear" class="text-lg group-hover:translate-x-1 transition-transform"></iconify-icon>
+                </span>
+            </button>
+        </div>
+
+        <!-- Application View -->
+        <div x-show="view === 'app'" class="w-full max-w-lg mx-auto relative transition-all duration-500">
+
+            <!-- Input Form -->
+            <div x-show="!result" class="relative perspective-1000">
+                <div class="glass-panel rounded-2xl p-8 relative overflow-hidden transition-transform duration-100"
+                     @mousemove="handleTilt($event)"
+                     @mouseleave="resetTilt()"
+                     :style="`transform: perspective(1000px) rotateX(${cardTilt.x}deg) rotateY(${cardTilt.y}deg)`">
+                    
+                    <!-- Decorative blur behind title -->
+                    <div class="absolute top-0 left-0 w-32 h-32 bg-amber-500/10 blur-[50px] pointer-events-none"></div>
+
+                    <div class="mb-8 relative z-10">
+                        <h2 class="text-lg font-semibold text-white mb-1 flex items-center gap-2">
+                            <iconify-icon icon="solar:home-2-linear" class="text-amber-500 text-lg"></iconify-icon>
+                            Property Details
+                        </h2>
+                        <p class="text-neutral-500 text-xs">Enter specifications for instant analysis</p>
+                    </div>
+
+                    <div class="space-y-6 relative z-10">
+                        <!-- Error Message -->
+                        <div x-show="error" class="bg-red-900/20 border border-red-500/20 rounded-lg p-3 flex items-start gap-3" style="display: none;">
+                            <iconify-icon icon="solar:danger-circle-linear" class="text-red-500 mt-0.5 text-lg"></iconify-icon>
+                            <span class="text-xs text-red-400" x-text="error"></span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="space-y-2 group/field">
+                                <label class="text-[10px] uppercase font-bold text-neutral-500 tracking-wider transition-colors group-hover/field:text-amber-500/80">Area (Sq Ft)</label>
+                                <div class="relative group/input">
+                                    <input type="number" x-model="formData.area_sqft" class="w-full bg-[#0a0a0a]/50 border border-white/10 rounded-lg px-4 py-3.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:bg-neutral-900/80 transition-all placeholder-neutral-700 font-medium" placeholder="2400">
+                                    <div class="absolute right-3.5 top-3.5 text-neutral-700 pointer-events-none transition-colors group-focus-within/input:text-amber-500">
+                                        <iconify-icon icon="solar:ruler-angular-linear" class="text-lg"></iconify-icon>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="space-y-2 group/field">
+                                <label class="text-[10px] uppercase font-bold text-neutral-500 tracking-wider transition-colors group-hover/field:text-amber-500/80">Bedrooms</label>
+                                <div class="relative group/input">
+                                    <input type="number" x-model="formData.beds" class="w-full bg-[#0a0a0a]/50 border border-white/10 rounded-lg px-4 py-3.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:bg-neutral-900/80 transition-all placeholder-neutral-700 font-medium" placeholder="3">
+                                    <div class="absolute right-3.5 top-3.5 text-neutral-700 pointer-events-none transition-colors group-focus-within/input:text-amber-500">
+                                        <iconify-icon icon="solar:bed-linear" class="text-lg"></iconify-icon>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="space-y-2 group/field">
+                                <label class="text-[10px] uppercase font-bold text-neutral-500 tracking-wider transition-colors group-hover/field:text-amber-500/80">Bathrooms</label>
+                                <div class="relative group/input">
+                                    <input type="number" x-model="formData.baths" class="w-full bg-[#0a0a0a]/50 border border-white/10 rounded-lg px-4 py-3.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:bg-neutral-900/80 transition-all placeholder-neutral-700 font-medium" placeholder="2">
+                                    <div class="absolute right-3.5 top-3.5 text-neutral-700 pointer-events-none transition-colors group-focus-within/input:text-amber-500">
+                                        <iconify-icon icon="solar:bath-linear" class="text-lg"></iconify-icon>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="space-y-2 group/field">
+                                <label class="text-[10px] uppercase font-bold text-neutral-500 tracking-wider transition-colors group-hover/field:text-amber-500/80">Furnishing</label>
+                                <div class="relative group/input">
+                                    <select x-model="formData.furnishing" class="w-full bg-[#0a0a0a]/50 border border-white/10 rounded-lg px-4 py-3.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:bg-neutral-900/80 transition-all appearance-none cursor-pointer font-medium hover:bg-neutral-900/50">
+                                        <option value="0" class="bg-neutral-900">Unfurnished</option>
+                                        <option value="1" class="bg-neutral-900">Furnished</option>
+                                    </select>
+                                    <div class="absolute right-3.5 top-4 text-neutral-600 pointer-events-none group-focus-within/input:text-amber-500 transition-colors">
+                                        <iconify-icon icon="solar:alt-arrow-down-linear" class="text-lg"></iconify-icon>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-6">
+                            <button @click="predict()" :disabled="!formData.area_sqft || loading" class="w-full py-4 bg-white text-black rounded-lg font-bold text-xs tracking-widest uppercase hover:bg-amber-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-amber-500/20 active:scale-[0.98]">
+                                <span x-show="!loading">Predict Price</span>
+                                <iconify-icon x-show="!loading" icon="solar:magic-stick-3-linear" class="text-lg"></iconify-icon>
+                                <span x-show="loading" class="flex items-center gap-2" style="display: none;">
+                                     <iconify-icon icon="solar:spinner-linear" class="animate-spin text-lg"></iconify-icon> Processing
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Result Card -->
+            <div x-show="result" x-transition:enter="transition ease-out duration-500"
+                x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+                x-transition:enter-end="opacity-100 scale-100 translate-y-0" class="relative" style="display: none;">
+
+                <div class="result-card rounded-2xl p-8 relative w-full overflow-hidden">
+
+                    <!-- Background Decorative Icon -->
+                    <div class="absolute -right-6 bottom-10 opacity-[0.03] pointer-events-none rotate-[-10deg]">
+                        <iconify-icon icon="solar:home-2-linear" class="text-amber-500 text-9xl"></iconify-icon>
+                    </div>
+
+                    <!-- Header -->
+                    <div class="flex justify-between items-start mb-8">
+                        <div>
+                            <div class="text-[10px] font-bold text-neutral-600 uppercase tracking-widest mb-1 font-mono flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                VALUATION ID: <span class="text-neutral-500" x-text="valuationId"></span>
+                            </div>
+                            <h2 class="text-xl font-bold text-white tracking-tight">Price Prediction</h2>
+                        </div>
+                        <button @click="resetForm()" class="w-8 h-8 flex items-center justify-center rounded-md bg-white/5 border border-white/10 hover:bg-white/10 text-neutral-500 hover:text-white transition-all transform hover:rotate-180 duration-500">
+                            <iconify-icon icon="solar:restart-linear" class="text-lg"></iconify-icon>
+                        </button>
+                    </div>
+
+                    <!-- Main Price Section -->
+                    <div class="text-center mb-10 relative z-10">
+                        <div class="flex items-center justify-center gap-1.5 mb-3">
+                            <iconify-icon icon="solar:verified-check-linear" class="text-amber-500 text-lg"></iconify-icon>
+                            <span class="text-[10px] font-bold text-amber-500 tracking-widest uppercase">Verified Estimate</span>
+                        </div>
+
+                        <div class="text-5xl md:text-6xl font-bold text-white tracking-tight mb-3"
+                            x-text="formatMoney(currentDisplayPrice)">$0</div>
+
+                        <div class="text-xs font-medium text-neutral-500">
+                            Confidence Score: <span class="text-green-500 font-semibold">98.4%</span>
+                        </div>
+                    </div>
+
+                    <!-- Divider -->
+                    <div class="h-px w-full bg-white/5 mb-8"></div>
+
+                    <!-- Breakdown Section -->
+                    <div class="relative z-10">
+                        <h3 class="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-6">Price Breakdown</h3>
+
+                        <div class="space-y-5">
+                            <!-- Area -->
+                            <div class="flex items-center gap-4 group">
+                                <span class="text-xs text-neutral-400 w-16 font-medium group-hover:text-white transition-colors">Area</span>
+                                <div class="flex-grow h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div class="h-full bg-amber-600 rounded-full w-[55%] bar-animate"></div>
+                                </div>
+                                <span class="text-xs text-neutral-300 font-mono w-8 text-right">55%</span>
+                            </div>
+
+                            <!-- Rooms -->
+                            <div class="flex items-center gap-4 group">
+                                <span class="text-xs text-neutral-400 w-16 font-medium group-hover:text-white transition-colors">Rooms</span>
+                                <div class="flex-grow h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div class="h-full bg-amber-400 rounded-full w-[30%] bar-animate" style="animation-delay: 0.1s"></div>
+                                </div>
+                                <span class="text-xs text-neutral-300 font-mono w-8 text-right">30%</span>
+                            </div>
+
+                            <!-- Amenities -->
+                            <div class="flex items-center gap-4 group">
+                                <span class="text-xs text-neutral-400 w-16 font-medium group-hover:text-white transition-colors">Amenities</span>
+                                <div class="flex-grow h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div class="h-full bg-amber-900 rounded-full w-[15%] bar-animate" style="animation-delay: 0.2s"></div>
+                                </div>
+                                <span class="text-xs text-neutral-300 font-mono w-8 text-right">15%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+</body>
+</html>
